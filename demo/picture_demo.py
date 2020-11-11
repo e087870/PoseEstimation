@@ -30,7 +30,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--cfg', help='experiment configure file name',
                     default='./experiments/vgg19_368x368_sgd.yaml', type=str)
 parser.add_argument('--weight', type=str,
-                    default='/home/ubuntu/CS230/best_pose_epoch16.pth')
+                    default='/home/ubuntu/CS230/best_pose_epoch34.pth')
 parser.add_argument('opts',
                     help="Modify config options using the command-line",
                     default=None,
@@ -43,7 +43,17 @@ update_config(cfg, args)
 
 
 model = get_model('vgg19')     
-model.load_state_dict(torch.load(args.weight))
+#model.load_state_dict(torch.load(args.weight))
+# original saved file with DataParallel
+state_dict = torch.load(args.weight)
+# create new OrderedDict that does not contain `module.`
+from collections import OrderedDict
+new_state_dict = OrderedDict()
+for k, v in state_dict.items():
+    name = k[7:] # remove `module.`
+    new_state_dict[name] = v
+# load params
+model.load_state_dict(new_state_dict)
 model = torch.nn.DataParallel(model).cuda()
 model.float()
 model.eval()
