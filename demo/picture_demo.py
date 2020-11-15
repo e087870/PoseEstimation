@@ -3,6 +3,7 @@ import re
 import sys
 sys.path.append('.')
 import cv2
+from PIL import Image
 import math
 import time
 import scipy
@@ -30,7 +31,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--cfg', help='experiment configure file name',
                     default='./experiments/vgg19_368x368_sgd.yaml', type=str)
 parser.add_argument('--weight', type=str,
-                    default='/home/ubuntu/CS230/best_pose_epoch34.pth')
+                    default='./train/best_pose/best_pose_epoch50.pth')
 parser.add_argument('opts',
                     help="Modify config options using the command-line",
                     default=None,
@@ -39,7 +40,6 @@ args = parser.parse_args()
 
 # update config file
 update_config(cfg, args)
-
 
 
 model = get_model('vgg19')     
@@ -58,18 +58,60 @@ model = torch.nn.DataParallel(model).cuda()
 model.float()
 model.eval()
 
-test_image = './readme/ski.jpg'
-oriImg = cv2.imread(test_image) # B,G,R order
-shape_dst = np.min(oriImg.shape[0:2])
+# Motivation for the real-time implementation of pose estimation
+# https://realpython.com/face-detection-in-python-using-a-webcam/
 
-# Get results of original image
-
-with torch.no_grad():
-    paf, heatmap, im_scale = get_outputs(oriImg, model,  'rtpose')
-          
-print(im_scale)
-humans = paf_to_pose_cpp(heatmap, paf, cfg)
+# cleanup the image folder
+mypath = "./LiveImages"
+for root, dirs, files in os.walk(mypath):
+    for file in files:
+        os.remove(os.path.join(root, file))
         
-out = draw_humans(oriImg, humans)
-cv2.imwrite('result.png',out)   
 
+# webcam image source
+video_capture = cv2.VideoCapture(0)
+imgnum=0
+
+while True:
+    
+    ret, frame = video_capture.read()      
+           
+    shape_dst = np.min(frame.shape[0:2])   
+       
+    with torch.no_grad():
+        paf, heatmap, im_scale = get_outputs(frame, model,  'rtpose')              
+    
+    humans = paf_to_pose_cpp(heatmap, paf, cfg)
+            
+    out = draw_humans(frame, humans)      
+        
+    cv2.imshow('Video', out)    
+    
+    # skip the first image and write the rest of the stream
+    if (imgnum > 0):
+        cv2.imwrite('./LiveImages/image' + str(imgnum) + '.png',out) 
+
+    # break loop with key press
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+    
+    imgnum+=1
+    
+
+# create the video
+print ('Creating video from the images')
+
+img_array = []
+
+for idx in range(1,imgnum):    
+    img = cv2.imread('./LiveImages/image' + str(idx) + '.png')
+    height, width, layers = img.shape
+    size = (width,height)
+    img_array.append(img) 
+ 
+out = cv2.VideoWriter('./video/pose_estimation.avi',cv2.VideoWriter_fourcc(*'DIVX'), 10, size)
+ 
+for i in range(len(img_array)):
+    out.write(img_array[i])
+    
+out.release()   
